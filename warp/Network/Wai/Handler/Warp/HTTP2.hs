@@ -8,6 +8,7 @@ import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad (when, unless)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Network.HTTP2
 import Network.Socket (SockAddr)
@@ -30,10 +31,12 @@ http2 conn ii addr transport settings src app = do
         ctx <- newContext
         let enqout = enqueueRsp ctx ii settings
             mkreq = mkRequest settings addr
-        tid <- forkIO $ frameSender conn ii ctx
+        tid <- forkIO $ frameReceiver ctx mkreq enqout src app
         let rsp = settingsFrame id []
         atomically $ writeTQueue (outputQ ctx) rsp
-        frameReceiver conn ctx mkreq enqout src app `E.finally` killThread tid
+        -- frameSender is the main thread because it ensures to send
+        -- a goway frame.
+        frameSender conn ii ctx `E.finally` killThread tid
   where
     checkTLS = case transport of
         TCP -> goaway conn InadequateSecurity "Weak TLS"
@@ -52,3 +55,9 @@ http2 conn ii addr transport settings src app = do
               else do
                 leftoverSource src frames
                 return True
+
+-- connClose must not be called here since Run:fork calls it
+goaway :: Connection -> ErrorCodeId -> ByteString -> IO ()
+goaway Connection{..} etype debugmsg = connSendAll bytestream
+  where
+    bytestream = goawayFrame (toStreamIdentifier 0) etype debugmsg

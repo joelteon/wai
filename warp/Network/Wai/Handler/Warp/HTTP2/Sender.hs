@@ -13,22 +13,17 @@ import Network.Wai.Handler.Warp.Types
 
 ----------------------------------------------------------------
 
-goaway :: Connection -> ErrorCodeId -> ByteString -> IO ()
-goaway Connection{..} etype debugmsg = do
-    let einfo = encodeInfo id 0
-        frame = GoAwayFrame (toStreamIdentifier 0) etype debugmsg
-        bytestream = encodeFrame einfo frame
-    connSendAll bytestream
-    -- connClose must not be called here since Run:fork calls it
+goawayFrame :: StreamIdentifier -> ErrorCodeId -> ByteString -> ByteString
+goawayFrame sid etype debugmsg = encodeFrame einfo frame
+  where
+    einfo = encodeInfo id 0
+    frame = GoAwayFrame sid etype debugmsg
 
-reset :: Connection -> ErrorCodeId -> StreamIdentifier -> IO ()
-reset Connection{..} etype sid = do
-    let einfo = encodeInfo id $ fromStreamIdentifier sid
-        frame = RSTStreamFrame etype
-        bytestream = encodeFrame einfo frame
-    connSendAll bytestream
-
-----------------------------------------------------------------
+resetFrame :: ErrorCodeId -> StreamIdentifier -> ByteString
+resetFrame etype sid = encodeFrame einfo frame
+  where
+    einfo = encodeInfo id $ fromStreamIdentifier sid
+    frame = RSTStreamFrame etype
 
 settingsFrame :: (FrameFlags -> FrameFlags) -> SettingsList -> ByteString
 settingsFrame func alist = encodeFrame einfo $ SettingsFrame alist

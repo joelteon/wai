@@ -25,12 +25,19 @@ import Network.Wai.Handler.Warp.HTTP2.Response
 
 ----------------------------------------------------------------
 
-frameReceiver :: Connection -> Context -> MkReq -> EnqRsp -> Source -> Application -> IO ()
-frameReceiver conn ctx@Context{..} mkreq enqout src app =
-    E.handle terminate loop
+frameReceiver :: Context -> MkReq -> EnqRsp -> Source -> Application -> IO ()
+frameReceiver ctx@Context{..} mkreq enqout src app =
+    E.handle sendGoaway loop
   where
-    terminate (ConnectionError err msg) = goaway conn err msg
-    terminate _                         = return ()
+    sendGoaway (ConnectionError err msg) = do
+        csid <- readIORef currentStreamId
+        let rsp = goawayFrame (toStreamIdentifier csid) err msg
+        atomically $ writeTQueue outputQ rsp
+    sendGoaway _                         = return ()
+
+    sendReset err sid = do
+        let rsp = resetFrame err sid
+        atomically $ writeTQueue outputQ rsp
 
     loop = do
         hd <- readBytes frameHeaderLength
@@ -51,7 +58,7 @@ frameReceiver conn ctx@Context{..} mkreq enqout src app =
         case checkFrameHeader settings ftyp header of
             Just h2err -> case h2err of
                 StreamError err sid -> do
-                    reset conn err sid
+                    sendReset err sid
                     consume payloadLength
                     return True
                 connErr -> E.throwIO connErr
@@ -59,7 +66,7 @@ frameReceiver conn ctx@Context{..} mkreq enqout src app =
                 ex <- E.try $ controlOrStream ftyp header
                 case ex of
                     Left (StreamError err sid) -> do
-                        reset conn err sid
+                        sendReset err sid
                         return True
                     Left connErr -> E.throw connErr
                     Right cont -> return cont
