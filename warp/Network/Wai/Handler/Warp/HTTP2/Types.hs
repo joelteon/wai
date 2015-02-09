@@ -2,6 +2,7 @@
 
 module Network.Wai.Handler.Warp.HTTP2.Types where
 
+import Control.Concurrent
 import Control.Concurrent.STM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -38,6 +39,7 @@ data Context = Context {
   , outputQ :: TQueue ByteString
   , encodeDynamicTable :: IORef DynamicTable
   , decodeDynamicTable :: IORef DynamicTable
+  , wait :: MVar ()
   }
 
 ----------------------------------------------------------------
@@ -51,7 +53,8 @@ newContext = do
     outQ <- newTQueueIO
     eht <- newDynamicTableForEncoding 4096 >>= newIORef
     dht <- newDynamicTableForDecoding 4096 >>= newIORef
-    return $ Context st tbl cnt csi outQ eht dht
+    wt <- newEmptyMVar
+    return $ Context st tbl cnt csi outQ eht dht wt
 
 ----------------------------------------------------------------
 

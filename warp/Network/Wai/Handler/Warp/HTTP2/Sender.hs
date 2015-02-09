@@ -2,7 +2,9 @@
 
 module Network.Wai.Handler.Warp.HTTP2.Sender where
 
+import Control.Concurrent (putMVar)
 import Control.Concurrent.STM
+import qualified Control.Exception as E
 import Control.Monad (when)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -39,7 +41,8 @@ pingFrame bs = encodeFrame einfo $ PingFrame bs
 
 -- fixme: packing bytestrings
 frameSender :: Connection -> InternalInfo -> Context -> IO ()
-frameSender Connection{..} InternalInfo{..} Context{..} = loop
+frameSender Connection{..} InternalInfo{..} Context{..} =
+    loop `E.finally` putMVar wait ()
   where
     loop = do
         cont <- readQ >>= send

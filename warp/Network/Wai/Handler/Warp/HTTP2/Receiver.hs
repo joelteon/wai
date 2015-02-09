@@ -4,7 +4,7 @@
 
 module Network.Wai.Handler.Warp.HTTP2.Receiver (frameReceiver) where
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, takeMVar)
 import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad (when, unless, void)
@@ -27,12 +27,14 @@ import Network.Wai.Handler.Warp.HTTP2.Response
 
 frameReceiver :: Context -> MkReq -> EnqRsp -> Source -> Application -> IO ()
 frameReceiver ctx@Context{..} mkreq enqout src app =
-    E.handle sendGoaway loop
+    E.handle sendGoaway loop `E.finally` takeMVar wait
   where
     sendGoaway (ConnectionError err msg) = do
         csid <- readIORef currentStreamId
         let rsp = goawayFrame (toStreamIdentifier csid) err msg
-        atomically $ writeTQueue outputQ rsp
+        atomically $ do
+            writeTQueue outputQ rsp
+            writeTQueue outputQ ""
     sendGoaway _                         = return ()
 
     sendReset err sid = do
@@ -41,7 +43,9 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
 
     loop = do
         hd <- readBytes frameHeaderLength
-        unless (BS.null hd) $ do
+        if BS.null hd then
+            atomically $ writeTQueue outputQ ""
+          else do
             let (typ,header@FrameHeader{..}) = decodeFrameHeader hd
             when (isResponse streamId) $ E.throwIO $ ConnectionError ProtocolError "stream id should be odd"
             cont <- guardError (toFrameTypeId typ) header
