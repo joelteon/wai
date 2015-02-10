@@ -59,7 +59,7 @@ newContext = do
 ----------------------------------------------------------------
 
 data Stream = Idle
-            | Continued [ByteStream] Bool
+            | Continued [HeaderBlockFragment] Bool
             | NoBody HeaderList
             | HasBody HeaderList
             | Body (TQueue ByteString)

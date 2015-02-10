@@ -48,16 +48,16 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
           else do
             let (typ,header@FrameHeader{..}) = decodeFrameHeader hd
             when (isResponse streamId) $ E.throwIO $ ConnectionError ProtocolError "stream id should be odd"
-            cont <- guardError (toFrameTypeId typ) header
+            cont <- guardError typ header
             when cont loop
 
-    guardError Nothing FrameHeader{..} = do
+    guardError (FrameUnknown _) FrameHeader{..} = do
         -- ignoring unknow frame
         consume payloadLength
         return True
-    guardError (Just FramePushPromise) _ =
+    guardError FramePushPromise _ =
         E.throwIO $ ConnectionError ProtocolError "push promise is not allowed"
-    guardError (Just ftyp) header@FrameHeader{..} = do
+    guardError ftyp header@FrameHeader{..} = do
         settings <- readIORef http2settings
         case checkFrameHeader settings ftyp header of
             Just h2err -> case h2err of
@@ -251,7 +251,7 @@ stream _ FrameHeader{..} _ _ _ = E.throwIO $ StreamError ProtocolError streamId
 
 ----------------------------------------------------------------
 
-decodeHeaderBlock :: ByteStream -> Context -> IO HeaderList
+decodeHeaderBlock :: HeaderBlockFragment -> Context -> IO HeaderList
 decodeHeaderBlock hdrblk Context{..} = do
     hdrtbl <- readIORef decodeDynamicTable
     (hdrtbl', hdr) <- decodeHeader hdrtbl hdrblk `E.onException` cleanup
