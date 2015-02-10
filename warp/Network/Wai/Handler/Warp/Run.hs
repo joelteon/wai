@@ -300,9 +300,14 @@ serveConnection conn ii origAddr transport settings app = do
     if isHTTP2 transport then
         http2 conn ii addr transport settings src app
       else do
-        http1 addr istatus src `E.catch` \e -> do
-            sendErrorResponse addr istatus e
-            throwIO (e :: SomeException)
+        bs <- readSource src
+        leftoverSource src bs
+        if S.length bs >= 4 && S.isPrefixOf "PRI " bs then
+            http2 conn ii addr transport settings src app
+          else
+            http1 addr istatus src `E.catch` \e -> do
+                sendErrorResponse addr istatus e
+                throwIO (e :: SomeException)
   where
     getProxyProtocolAddr src =
         case settingsProxyProtocol settings of
