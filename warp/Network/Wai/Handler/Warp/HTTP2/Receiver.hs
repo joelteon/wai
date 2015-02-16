@@ -52,9 +52,13 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
             when cont loop
 
     guardError (FrameUnknown _) FrameHeader{..} = do
-        -- ignoring unknow frame
-        consume payloadLength
-        return True
+        mx <- readIORef continued
+        case mx of
+            Nothing -> do
+                -- ignoring unknow frame
+                consume payloadLength
+                return True
+            Just _  -> E.throwIO $ ConnectionError ProtocolError "stream id should be odd"
     guardError FramePushPromise _ =
         E.throwIO $ ConnectionError ProtocolError "push promise is not allowed"
     guardError ftyp header@FrameHeader{..} = do
