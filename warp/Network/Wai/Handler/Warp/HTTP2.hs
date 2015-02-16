@@ -32,7 +32,8 @@ http2 conn ii addr transport settings src app = do
         let enqout = enqueueRsp ctx ii settings
             mkreq = mkRequest settings addr
         tid <- forkIO $ frameReceiver ctx mkreq enqout src app
-        let rsp = settingsFrame id []
+        -- fixme: 100 is hard-coded
+        let rsp = settingsFrame id [(SettingsMaxConcurrentStreams,100)]
         atomically $ writeTQueue (outputQ ctx) rsp
         -- frameSender is the main thread because it ensures to send
         -- a goway frame.

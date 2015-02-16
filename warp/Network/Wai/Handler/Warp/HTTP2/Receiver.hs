@@ -115,7 +115,7 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
               s@(Continued _ _) -> do
                   setContinued
                   register stid s
-              s -> do
+              s -> do -- Body, HalfClosed, Idle
                   resetContinued
                   register stid s
                   print s -- fixme
