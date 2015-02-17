@@ -10,9 +10,9 @@ import qualified Control.Exception as E
 import Control.Monad (when, unless, void)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.IORef (readIORef, writeIORef, modifyIORef)
 import qualified Data.IntMap as M
 import Network.Wai
+import Network.Wai.Handler.Warp.IORef
 import Network.Wai.Handler.Warp.Types
 
 import Network.HTTP2
@@ -86,16 +86,17 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
       | otherwise = do
           checkContinued
           let stid = fromStreamIdentifier streamId
-          strm <- getStream
+          Stream{..} <- getStream
           -- fixme: DataFrame loop
           pl <- readBytes payloadLength
-          strm' <- stream ftyp header pl ctx strm
-          case strm' of
+          state <- readIORef streamState
+          state' <- stream ftyp header pl ctx state
+          case state' of
               NoBody hdr -> do
                   resetContinued
                   case validateHeadrs hdr of
                       Just vh -> do
-                          register stid HalfClosed
+                          writeIORef streamState HalfClosed
                           let req = mkreq vh (return "")
                           -- fixme: ensuring killing this thread
                           void $ forkIO $ void $ app req $ enqout stid
@@ -105,7 +106,7 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
                   case validateHeadrs hdr of
                       Just vh -> do
                           q <- newTQueueIO
-                          register stid (Body q)
+                          writeIORef streamState (Body q)
                           readQ <- newReadBody q
                           bodySource <- mkSource readQ
                           let req = mkreq vh (readSource bodySource)
@@ -114,15 +115,12 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
                       Nothing -> E.throwIO $ StreamError ProtocolError streamId
               s@(Continued _ _) -> do
                   setContinued
-                  register stid s
+                  writeIORef streamState s
               s -> do -- Body, HalfClosed, Idle
                   resetContinued
-                  register stid s
-                  print s -- fixme
+                  writeIORef streamState s
           return True
        where
-         -- fixme: attomic?
-         register k v = modifyIORef streamTable $ \m -> M.insert k v m
          setContinued = writeIORef continued (Just streamId)
          resetContinued = writeIORef continued Nothing
          checkContinued = do
@@ -146,7 +144,14 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
                  Nothing -> do
                      when (ftyp `notElem` [FrameHeaders,FramePriority]) $
                          E.throwIO $ ConnectionError ProtocolError "this frame is not allowed in an idel stream"
-                     return Idle
+                     cnt <- readIORef concurrency
+                     when (cnt >= 100) $ -- fixme: hard-coding
+                         E.throwIO $ StreamError RefusedStream streamId
+                     newstrm <- newStream undefined -- fixme: kill thread
+                     atomicModifyIORef' streamTable $ \m ->
+                         (M.insert stid newstrm m, ())
+                     atomicModifyIORef' concurrency $ \x -> (x+1, ())
+                     return newstrm
 
     consume = void . readBytes
 
@@ -208,7 +213,7 @@ control _ _ _ _ =
 
 ----------------------------------------------------------------
 
-stream :: FrameTypeId -> FrameHeader -> ByteString -> Context -> Stream -> IO Stream
+stream :: FrameTypeId -> FrameHeader -> ByteString -> Context -> StreamState -> IO StreamState
 stream FrameHeaders header@FrameHeader{..} bs ctx Idle = do
     let HeadersFrame _ frag = decodeHeadersFrame header bs
         endOfStream = testEndStream flags

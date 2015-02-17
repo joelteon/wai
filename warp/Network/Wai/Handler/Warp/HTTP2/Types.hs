@@ -2,6 +2,7 @@
 
 module Network.Wai.Handler.Warp.HTTP2.Types where
 
+import Control.Applicative ((<$>),(<*>))
 import Control.Concurrent
 import Control.Concurrent.STM
 import Data.ByteString (ByteString)
@@ -31,44 +32,59 @@ isHTTP2 tls = useHTTP2
 ----------------------------------------------------------------
 
 data Context = Context {
-    http2settings :: IORef Settings
-  -- fixme: clean up for frames whose end stream do not arrive
-  , streamTable :: IORef (IntMap Stream)
-  , continued :: IORef (Maybe StreamIdentifier)
-  , currentStreamId :: IORef Int
-  , outputQ :: TQueue ByteString
+    http2settings      :: IORef Settings
+  , streamTable        :: IORef (IntMap Stream)
+  , concurrency        :: IORef Int
+  , continued          :: IORef (Maybe StreamIdentifier)
+  , currentStreamId    :: IORef Int
+  , outputQ            :: TQueue ByteString
   , encodeDynamicTable :: IORef DynamicTable
   , decodeDynamicTable :: IORef DynamicTable
-  , wait :: MVar ()
+  , wait               :: MVar ()
   }
 
 ----------------------------------------------------------------
 
 newContext :: IO Context
-newContext = do
-    st <- newIORef defaultSettings
-    tbl <- newIORef M.empty
-    cnt <- newIORef Nothing
-    csi <- newIORef 0
-    outQ <- newTQueueIO
-    eht <- newDynamicTableForEncoding 4096 >>= newIORef
-    dht <- newDynamicTableForDecoding 4096 >>= newIORef
-    wt <- newEmptyMVar
-    return $ Context st tbl cnt csi outQ eht dht wt
+newContext = Context <$> newIORef defaultSettings
+                     <*> newIORef M.empty
+                     <*> newIORef 0
+                     <*> newIORef Nothing
+                     <*> newIORef 0
+                     <*> newTQueueIO
+                     <*> (newDynamicTableForEncoding 4096 >>= newIORef)
+                     <*> (newDynamicTableForDecoding 4096 >>= newIORef)
+                     <*> newEmptyMVar
 
 ----------------------------------------------------------------
 
-data Stream = Idle
-            | Continued [HeaderBlockFragment] Bool
-            | NoBody HeaderList
-            | HasBody HeaderList
-            | Body (TQueue ByteString)
-            | HalfClosed
+data StreamState =
+    Idle
+  | Continued [HeaderBlockFragment] Bool
+  | NoBody HeaderList
+  | HasBody HeaderList
+  | Body (TQueue ByteString)
+  | HalfClosed
+  | Closed
 
-instance Show Stream where
+instance Show StreamState where
     show Idle            = "Idle"
     show (Continued _ _) = "Continued"
     show (NoBody  _)     = "NoBody"
     show (HasBody _)     = "HasBody"
     show (Body _)        = "Body"
     show HalfClosed      = "HalfClosed"
+    show Closed          = "Closed"
+
+----------------------------------------------------------------
+
+data Activity = Active | Inactive
+
+data Stream = Stream {
+    streamTimeoutAction :: IO ()
+  , streamState         :: IORef StreamState
+  , streamActivity      :: IORef Activity
+  }
+
+newStream :: IO () -> IO Stream
+newStream action = Stream action <$> newIORef Idle <*> newIORef Active
