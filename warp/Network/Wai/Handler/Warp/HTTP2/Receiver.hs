@@ -4,29 +4,26 @@
 
 module Network.Wai.Handler.Warp.HTTP2.Receiver (frameReceiver) where
 
-import Control.Concurrent (forkIO, takeMVar)
+import Control.Concurrent (takeMVar)
 import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad (when, unless, void)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.IntMap as M
-import Network.Wai
+import Network.Wai.Handler.Warp.HTTP2.Request
+import Network.Wai.Handler.Warp.HTTP2.Sender
+import Network.Wai.Handler.Warp.HTTP2.Types
 import Network.Wai.Handler.Warp.IORef
 import Network.Wai.Handler.Warp.Types
 
 import Network.HTTP2
 import Network.HPACK
 
-import Network.Wai.Handler.Warp.HTTP2.Types
-import Network.Wai.Handler.Warp.HTTP2.Sender
-import Network.Wai.Handler.Warp.HTTP2.Request
-import Network.Wai.Handler.Warp.HTTP2.Response
-
 ----------------------------------------------------------------
 
-frameReceiver :: Context -> MkReq -> EnqRsp -> Source -> Application -> IO ()
-frameReceiver ctx@Context{..} mkreq enqout src app =
+frameReceiver :: Context -> MkReq -> Source -> IO ()
+frameReceiver ctx@Context{..} mkreq src =
     E.handle sendGoaway loop `E.finally` takeMVar wait
   where
     sendGoaway (ConnectionError err msg) = do
@@ -85,12 +82,12 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
           control ftyp header pl ctx
       | otherwise = do
           checkContinued
-          let stid = fromStreamIdentifier streamId
           Stream{..} <- getStream
           -- fixme: DataFrame loop
           pl <- readBytes payloadLength
           state <- readIORef streamState
           state' <- stream ftyp header pl ctx state
+          writeIORef streamActivity Active
           case state' of
               NoBody hdr -> do
                   resetContinued
@@ -98,8 +95,7 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
                       Just vh -> do
                           writeIORef streamState HalfClosed
                           let req = mkreq vh (return "")
-                          -- fixme: ensuring killing this thread
-                          void $ forkIO $ void $ app req $ enqout stid
+                          atomically $ writeTQueue inputQ (streamId, req)
                       Nothing -> E.throwIO $ StreamError ProtocolError streamId
               HasBody hdr -> do
                   resetContinued
@@ -110,8 +106,7 @@ frameReceiver ctx@Context{..} mkreq enqout src app =
                           readQ <- newReadBody q
                           bodySource <- mkSource readQ
                           let req = mkreq vh (readSource bodySource)
-                          -- fixme: ensuring killing this thread
-                          void $ forkIO $ void $ app req $ enqout stid
+                          atomically $ writeTQueue inputQ (streamId, req)
                       Nothing -> E.throwIO $ StreamError ProtocolError streamId
               s@(Continued _ _) -> do
                   setContinued

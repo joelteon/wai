@@ -7,7 +7,7 @@ module Network.Wai.Handler.Warp.HTTP2 (isHTTP2, http2) where
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM
 import qualified Control.Exception as E
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, replicateM, void, forever)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Network.HTTP2
@@ -29,15 +29,17 @@ http2 conn ii addr transport settings src app = do
     ok <- checkPreface
     when ok $ do
         ctx <- newContext
-        let enqout = enqueueRsp ctx ii settings
+        let enQResponse = enqueueRsp ctx ii settings
             mkreq = mkRequest settings addr
-        tid <- forkIO $ frameReceiver ctx mkreq enqout src app
+        tid <- forkIO $ frameReceiver ctx mkreq src
+        -- fixme: 6 is hard-coded
+        tids <- replicateM 6 $ forkIO $ runApp ctx app enQResponse
         -- fixme: 100 is hard-coded
         let rsp = settingsFrame id [(SettingsMaxConcurrentStreams,100)]
         atomically $ writeTQueue (outputQ ctx) rsp
         -- frameSender is the main thread because it ensures to send
         -- a goway frame.
-        frameSender conn ii ctx `E.finally` killThread tid
+        frameSender conn ii ctx `E.finally` mapM_ killThread (tid:tids)
   where
     checkTLS = case transport of
         TCP -> goaway conn InadequateSecurity "Weak TLS"
@@ -62,3 +64,9 @@ goaway :: Connection -> ErrorCodeId -> ByteString -> IO ()
 goaway Connection{..} etype debugmsg = connSendAll bytestream
   where
     bytestream = goawayFrame (toStreamIdentifier 0) etype debugmsg
+
+runApp :: Context -> Application -> EnqRsp -> IO ()
+runApp Context{..} app enQResponse = forever $ do
+    (sid, req) <- atomically $ readTQueue inputQ
+    let stid = fromStreamIdentifier sid
+    void $ app req $ enQResponse stid

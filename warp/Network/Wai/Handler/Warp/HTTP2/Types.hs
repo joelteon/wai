@@ -11,6 +11,7 @@ import Data.IORef (IORef, newIORef)
 import qualified Data.IntMap as M
 import Data.IntMap.Strict (IntMap)
 import qualified Network.HTTP.Types as H
+import Network.Wai (Request)
 import Network.Wai.Handler.Warp.Types
 
 import Network.HTTP2
@@ -37,6 +38,7 @@ data Context = Context {
   , concurrency        :: IORef Int
   , continued          :: IORef (Maybe StreamIdentifier)
   , currentStreamId    :: IORef Int
+  , inputQ             :: TQueue (StreamIdentifier, Request)
   , outputQ            :: TQueue ByteString
   , encodeDynamicTable :: IORef DynamicTable
   , decodeDynamicTable :: IORef DynamicTable
@@ -51,6 +53,7 @@ newContext = Context <$> newIORef defaultSettings
                      <*> newIORef 0
                      <*> newIORef Nothing
                      <*> newIORef 0
+                     <*> newTQueueIO
                      <*> newTQueueIO
                      <*> (newDynamicTableForEncoding 4096 >>= newIORef)
                      <*> (newDynamicTableForDecoding 4096 >>= newIORef)

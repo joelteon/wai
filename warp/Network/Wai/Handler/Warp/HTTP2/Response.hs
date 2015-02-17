@@ -91,6 +91,7 @@ enqueueRsp ctx@Context{..} ii settings stid (ResponseStream st hdr0 sb) = do
 enqueueRsp _ _ _ _ _ = -- fixme
     return ResponseReceived
 
+-- fixme: continue
 headerFrame :: Context -> InternalInfo -> S.Settings -> Int -> H.Status -> H.ResponseHeaders -> IO ByteString
 headerFrame Context{..} ii settings stid st hdr0 = do
     hdr1 <- addServerAndDate hdr0
