@@ -32,13 +32,15 @@ isHTTP2 tls = useHTTP2
 
 ----------------------------------------------------------------
 
+data Input = Input StreamIdentifier Request (IORef (IO ()))
+
 data Context = Context {
     http2settings      :: IORef Settings
   , streamTable        :: IORef (IntMap Stream)
   , concurrency        :: IORef Int
   , continued          :: IORef (Maybe StreamIdentifier)
   , currentStreamId    :: IORef Int
-  , inputQ             :: TQueue (StreamIdentifier, Request)
+  , inputQ             :: TQueue Input
   , outputQ            :: TQueue ByteString
   , encodeDynamicTable :: IORef DynamicTable
   , decodeDynamicTable :: IORef DynamicTable
@@ -84,10 +86,12 @@ instance Show StreamState where
 data Activity = Active | Inactive
 
 data Stream = Stream {
-    streamTimeoutAction :: IO ()
-  , streamState         :: IORef StreamState
+    streamState         :: IORef StreamState
   , streamActivity      :: IORef Activity
+  , streamTimeoutAction :: IORef (IO ())
   }
 
-newStream :: IO () -> IO Stream
-newStream action = Stream action <$> newIORef Idle <*> newIORef Active
+newStream :: IO Stream
+newStream = Stream <$> newIORef Idle
+                   <*> newIORef Active
+                   <*> newIORef (return ())

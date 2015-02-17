@@ -7,7 +7,7 @@ module Network.Wai.Handler.Warp.HTTP2 (isHTTP2, http2) where
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM
 import qualified Control.Exception as E
-import Control.Monad (when, unless, replicateM, void, forever)
+import Control.Monad (when, unless, replicateM)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Network.HTTP2
@@ -18,6 +18,7 @@ import Network.Wai.Handler.Warp.HTTP2.Request
 import Network.Wai.Handler.Warp.HTTP2.Response
 import Network.Wai.Handler.Warp.HTTP2.Sender
 import Network.Wai.Handler.Warp.HTTP2.Types
+import Network.Wai.Handler.Warp.HTTP2.Worker
 import qualified Network.Wai.Handler.Warp.Settings as S (Settings)
 import Network.Wai.Handler.Warp.Types
 
@@ -32,6 +33,8 @@ http2 conn ii addr transport settings src app = do
         let enQResponse = enqueueRsp ctx ii settings
             mkreq = mkRequest settings addr
         tid <- forkIO $ frameReceiver ctx mkreq src
+        -- To prevent thread-leak, we executed the fixed number of threads
+        -- statically.
         -- fixme: 6 is hard-coded
         tids <- replicateM 6 $ forkIO $ worker ctx app enQResponse
         -- fixme: 100 is hard-coded
@@ -64,9 +67,3 @@ goaway :: Connection -> ErrorCodeId -> ByteString -> IO ()
 goaway Connection{..} etype debugmsg = connSendAll bytestream
   where
     bytestream = goawayFrame (toStreamIdentifier 0) etype debugmsg
-
-worker :: Context -> Application -> EnqRsp -> IO ()
-worker Context{..} app enQResponse = forever $ do
-    (sid, req) <- atomically $ readTQueue inputQ
-    let stid = fromStreamIdentifier sid
-    void $ app req $ enQResponse stid
