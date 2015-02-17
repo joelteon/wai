@@ -33,7 +33,7 @@ http2 conn ii addr transport settings src app = do
             mkreq = mkRequest settings addr
         tid <- forkIO $ frameReceiver ctx mkreq src
         -- fixme: 6 is hard-coded
-        tids <- replicateM 6 $ forkIO $ runApp ctx app enQResponse
+        tids <- replicateM 6 $ forkIO $ worker ctx app enQResponse
         -- fixme: 100 is hard-coded
         let rsp = settingsFrame id [(SettingsMaxConcurrentStreams,100)]
         atomically $ writeTQueue (outputQ ctx) rsp
@@ -65,8 +65,8 @@ goaway Connection{..} etype debugmsg = connSendAll bytestream
   where
     bytestream = goawayFrame (toStreamIdentifier 0) etype debugmsg
 
-runApp :: Context -> Application -> EnqRsp -> IO ()
-runApp Context{..} app enQResponse = forever $ do
+worker :: Context -> Application -> EnqRsp -> IO ()
+worker Context{..} app enQResponse = forever $ do
     (sid, req) <- atomically $ readTQueue inputQ
     let stid = fromStreamIdentifier sid
     void $ app req $ enQResponse stid
