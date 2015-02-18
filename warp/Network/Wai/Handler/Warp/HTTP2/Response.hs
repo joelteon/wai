@@ -40,8 +40,8 @@ type EnqRsp = Stream -> Response -> IO ResponseReceived
 enqueueRsp :: Context -> InternalInfo -> S.Settings -> EnqRsp
 enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseBuilder st hdr0 bb) = do
     hdrframe <- headerFrame ctx ii settings streamNumber st hdr0
-    atomically $ writeTQueue outputQ $ hdrframe
-    atomically $ writeTQueue outputQ $ datframe
+    atomically $ writeTQueue outputQ hdrframe
+    atomically $ writeTQueue outputQ datframe
     return ResponseReceived
   where
     einfo = encodeInfo setEndStream streamNumber
@@ -50,7 +50,7 @@ enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseBuilder st hdr0 bb) =
 -- fixme: filepart
 enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseFile st hdr0 file _) = do
     hdrframe <- headerFrame ctx ii settings streamNumber st hdr0
-    atomically $ writeTQueue outputQ $ hdrframe
+    atomically $ writeTQueue outputQ hdrframe
     withFile file ReadMode go
     return ResponseReceived
   where
@@ -64,25 +64,25 @@ enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseFile st hdr0 file _) 
         bs <- BS.hGet hdl 2048 -- fixme
         if BS.null bs then do
             let datframe = encodeFrame einfoEnd $ DataFrame bs0
-            atomically $ writeTQueue outputQ $ datframe
+            atomically $ writeTQueue outputQ datframe
           else do
             let datframe = encodeFrame einfo $ DataFrame bs0
-            atomically $ writeTQueue outputQ $ datframe
+            atomically $ writeTQueue outputQ datframe
             loop hdl bs
 
 enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseStream st hdr0 sb) = do
     hdrframe <- headerFrame ctx ii settings streamNumber st hdr0
-    atomically $ writeTQueue outputQ $ hdrframe
+    atomically $ writeTQueue outputQ hdrframe
     sb send $ return ()
     flush'
     return ResponseReceived
   where
-    send bb = atomically $ writeTQueue outputQ $ datframe
+    send bb = atomically $ writeTQueue outputQ datframe
       where
         einfo = encodeInfo id streamNumber
         datframe = encodeFrame einfo $ DataFrame $ toByteString bb
     -- fixme: 0-length body is inefficient
-    flush' = atomically $ writeTQueue outputQ $ datframe
+    flush' = atomically $ writeTQueue outputQ datframe
       where
         einfo = encodeInfo (setEndStream . setPadded) streamNumber
         datframe = encodeFrame einfo $ DataFrame "\5DUMMY"
