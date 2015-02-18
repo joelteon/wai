@@ -89,9 +89,13 @@ data Stream = Stream {
     streamState         :: IORef StreamState
   , streamActivity      :: IORef Activity
   , streamTimeoutAction :: IORef (IO ())
+  , streamContentLength :: IORef (Maybe Int)
+  , streamBodyLength    :: IORef Int
   }
 
 newStream :: IO Stream
 newStream = Stream <$> newIORef Idle
                    <*> newIORef Active
                    <*> newIORef (return ())
+                   <*> newIORef Nothing
+                   <*> newIORef 0

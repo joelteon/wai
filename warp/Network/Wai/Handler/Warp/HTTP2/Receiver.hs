@@ -82,17 +82,19 @@ frameReceiver ctx@Context{..} mkreq src =
           control ftyp header pl ctx
       | otherwise = do
           checkContinued
-          Stream{..} <- getStream
+          strm@Stream{..} <- getStream
           -- fixme: DataFrame loop
           pl <- readBytes payloadLength
           state <- readIORef streamState
-          state' <- stream ftyp header pl ctx state
+          state' <- stream ftyp header pl ctx state strm
           writeIORef streamActivity Active
           case state' of
               NoBody hdr -> do
                   resetContinued
                   case validateHeadrs hdr of
                       Just vh -> do
+                          when (vhCL vh /= Nothing && vhCL vh /= Just 0) $
+                              E.throwIO $ StreamError ProtocolError streamId
                           writeIORef streamState HalfClosed
                           let req = mkreq vh (return "")
                           atomically $ writeTQueue inputQ $ Input streamId req streamTimeoutAction
@@ -103,6 +105,7 @@ frameReceiver ctx@Context{..} mkreq src =
                       Just vh -> do
                           q <- newTQueueIO
                           writeIORef streamState (Body q)
+                          writeIORef streamContentLength $ vhCL vh
                           readQ <- newReadBody q
                           bodySource <- mkSource readQ
                           let req = mkreq vh (readSource bodySource)
@@ -208,8 +211,8 @@ control _ _ _ _ =
 
 ----------------------------------------------------------------
 
-stream :: FrameTypeId -> FrameHeader -> ByteString -> Context -> StreamState -> IO StreamState
-stream FrameHeaders header@FrameHeader{..} bs ctx Idle = do
+stream :: FrameTypeId -> FrameHeader -> ByteString -> Context -> StreamState -> Stream -> IO StreamState
+stream FrameHeaders header@FrameHeader{..} bs ctx Idle _ = do
     let HeadersFrame _ frag = decodeHeadersFrame header bs
         endOfStream = testEndStream flags
         endOfHeader = testEndHeader flags
@@ -219,17 +222,24 @@ stream FrameHeaders header@FrameHeader{..} bs ctx Idle = do
       else
         return $ Continued [frag] endOfStream
 
-stream FrameData header@FrameHeader{..} bs _ s@(Body q) = do
+stream FrameData header@FrameHeader{..} bs _ s@(Body q) Stream{..} = do
     let DataFrame body = decodeDataFrame header bs
         endOfStream = testEndStream flags
+    len0 <- readIORef streamBodyLength
+    let !len = len0 + payloadLength
+    writeIORef streamBodyLength len
     atomically $ writeTQueue q body
     if endOfStream then do
+        mcl <- readIORef streamContentLength
+        case mcl of
+            Nothing -> return ()
+            Just cl -> when (cl /= len) $ E.throwIO $ StreamError ProtocolError streamId
         atomically $ writeTQueue q ""
         return HalfClosed
       else
         return s
 
-stream FrameContinuation FrameHeader{..} frag ctx (Continued rfrags endOfStream) = do
+stream FrameContinuation FrameHeader{..} frag ctx (Continued rfrags endOfStream) _ = do
     let endOfHeader = testEndHeader flags
         rfrags' = frag : rfrags
     if endOfHeader then do
@@ -239,9 +249,9 @@ stream FrameContinuation FrameHeader{..} frag ctx (Continued rfrags endOfStream)
       else
         return $ Continued rfrags' endOfStream
 
-stream FrameContinuation _ _ _ _ = E.throwIO $ ConnectionError ProtocolError "continue frame cannot come here"
+stream FrameContinuation _ _ _ _ _ = E.throwIO $ ConnectionError ProtocolError "continue frame cannot come here"
 
-stream FrameWindowUpdate header@FrameHeader{..} bs Context{..} s = do
+stream FrameWindowUpdate header@FrameHeader{..} bs Context{..} s _ = do
     let WindowUpdateFrame wsi = decodeWindowUpdateFrame header bs
     -- fixme: valid case
     when (wsi == 0) $
@@ -249,9 +259,9 @@ stream FrameWindowUpdate header@FrameHeader{..} bs Context{..} s = do
     return s
 
 -- this ordering is important
-stream _ _ _ _ (Continued _ _) = E.throwIO $ ConnectionError ProtocolError "an illegal frame follows header/continuation frames"
-stream FrameData FrameHeader{..} _ _ _ = E.throwIO $ StreamError StreamClosed streamId
-stream _ FrameHeader{..} _ _ _ = E.throwIO $ StreamError ProtocolError streamId
+stream _ _ _ _ (Continued _ _) _ = E.throwIO $ ConnectionError ProtocolError "an illegal frame follows header/continuation frames"
+stream FrameData FrameHeader{..} _ _ _ _ = E.throwIO $ StreamError StreamClosed streamId
+stream _ FrameHeader{..} _ _ _ _ = E.throwIO $ StreamError ProtocolError streamId
 
 ----------------------------------------------------------------
 
