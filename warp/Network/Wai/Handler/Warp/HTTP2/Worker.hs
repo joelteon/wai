@@ -27,6 +27,8 @@ worker Context{..} app enQResponse = go `E.catch` gonext
         tid <- myThreadId
         E.bracket (writeIORef streamTimeoutAction $ E.throwTo tid Break)
                   (\_ -> writeIORef streamTimeoutAction $ return ())
-                  (\_ -> void $ app req $ enQResponse strm)
+                  $ \_ -> do
+                      void $ app req $ enQResponse strm
+                      writeIORef streamState Closed
     gonext Break = go `E.catch` gonext
 
