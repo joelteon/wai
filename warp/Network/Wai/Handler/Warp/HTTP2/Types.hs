@@ -86,7 +86,7 @@ instance Show StreamState where
 data Activity = Active | Inactive
 
 data Stream = Stream {
-    streamNumber        :: StreamIdentifier
+    streamNumber        :: Int
   , streamState         :: IORef StreamState
   , streamActivity      :: IORef Activity
   , streamTimeoutAction :: IORef (IO ())
@@ -94,7 +94,7 @@ data Stream = Stream {
   , streamBodyLength    :: IORef Int
   }
 
-newStream :: StreamIdentifier -> IO Stream
+newStream :: Int -> IO Stream
 newStream sid = Stream sid <$> newIORef Idle
                            <*> newIORef Active
                            <*> newIORef (return ())

@@ -8,7 +8,6 @@ import Control.Concurrent.STM
 import Control.Exception as E
 import Control.Monad (void, forever)
 import Data.Typeable
-import Network.HTTP2
 import Network.Wai
 import Network.Wai.Handler.Warp.HTTP2.Response
 import Network.Wai.Handler.Warp.HTTP2.Types
@@ -24,11 +23,10 @@ worker :: Context -> Application -> EnqRsp -> IO ()
 worker Context{..} app enQResponse = go `E.catch` gonext
   where
     go = forever $ do
-        Input Stream{..} req <- atomically $ readTQueue inputQ
-        let stid = fromStreamIdentifier streamNumber
+        Input strm@Stream{..} req <- atomically $ readTQueue inputQ
         tid <- myThreadId
         E.bracket (writeIORef streamTimeoutAction $ E.throwTo tid Break)
                   (\_ -> writeIORef streamTimeoutAction $ return ())
-                  (\_ -> void $ app req $ enQResponse stid)
+                  (\_ -> void $ app req $ enQResponse strm)
     gonext Break = go `E.catch` gonext
 

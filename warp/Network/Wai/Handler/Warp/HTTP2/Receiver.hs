@@ -145,7 +145,7 @@ frameReceiver ctx@Context{..} mkreq src =
                      cnt <- readIORef concurrency
                      when (cnt >= 100) $ -- fixme: hard-coding
                          E.throwIO $ StreamError RefusedStream streamId
-                     newstrm <- newStream streamId
+                     newstrm <- newStream stid
                      atomicModifyIORef' streamTable $ \m ->
                          (M.insert stid newstrm m, ())
                      atomicModifyIORef' concurrency $ \x -> (x+1, ())

@@ -34,29 +34,29 @@ ResponseRaw (IO ByteString -> (ByteString -> IO ()) -> IO ()) Response
 
 -- enqueueRsp :: TQueue Rsp -> Int -> Response -> IO ResponseReceived
 
-type EnqRsp = Int -> Response -> IO ResponseReceived
+type EnqRsp = Stream -> Response -> IO ResponseReceived
 
 -- fixme: more efficient buffer handling
 enqueueRsp :: Context -> InternalInfo -> S.Settings -> EnqRsp
-enqueueRsp ctx@Context{..} ii settings stid (ResponseBuilder st hdr0 bb) = do
-    hdrframe <- headerFrame ctx ii settings stid st hdr0
+enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseBuilder st hdr0 bb) = do
+    hdrframe <- headerFrame ctx ii settings streamNumber st hdr0
     atomically $ writeTQueue outputQ $ hdrframe
     atomically $ writeTQueue outputQ $ datframe
     return ResponseReceived
   where
-    einfo = encodeInfo setEndStream stid
+    einfo = encodeInfo setEndStream streamNumber
     datframe = encodeFrame einfo $ DataFrame $ toByteString bb
 
 -- fixme: filepart
-enqueueRsp ctx@Context{..} ii settings stid (ResponseFile st hdr0 file _) = do
-    hdrframe <- headerFrame ctx ii settings stid st hdr0
+enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseFile st hdr0 file _) = do
+    hdrframe <- headerFrame ctx ii settings streamNumber st hdr0
     atomically $ writeTQueue outputQ $ hdrframe
     withFile file ReadMode go
     return ResponseReceived
   where
     -- fixme: more efficient buffering
-    einfoEnd = encodeInfo setEndStream stid
-    einfo = encodeInfo id stid
+    einfoEnd = encodeInfo setEndStream streamNumber
+    einfo = encodeInfo id streamNumber
     go hdl = do
         bs <- BS.hGet hdl 2048 -- fixme
         loop hdl bs
@@ -70,8 +70,8 @@ enqueueRsp ctx@Context{..} ii settings stid (ResponseFile st hdr0 file _) = do
             atomically $ writeTQueue outputQ $ datframe
             loop hdl bs
 
-enqueueRsp ctx@Context{..} ii settings stid (ResponseStream st hdr0 sb) = do
-    hdrframe <- headerFrame ctx ii settings stid st hdr0
+enqueueRsp ctx@Context{..} ii settings Stream{..} (ResponseStream st hdr0 sb) = do
+    hdrframe <- headerFrame ctx ii settings streamNumber st hdr0
     atomically $ writeTQueue outputQ $ hdrframe
     sb send $ return ()
     flush'
@@ -79,12 +79,12 @@ enqueueRsp ctx@Context{..} ii settings stid (ResponseStream st hdr0 sb) = do
   where
     send bb = atomically $ writeTQueue outputQ $ datframe
       where
-        einfo = encodeInfo id stid
+        einfo = encodeInfo id streamNumber
         datframe = encodeFrame einfo $ DataFrame $ toByteString bb
     -- fixme: 0-length body is inefficient
     flush' = atomically $ writeTQueue outputQ $ datframe
       where
-        einfo = encodeInfo (setEndStream . setPadded) stid
+        einfo = encodeInfo (setEndStream . setPadded) streamNumber
         datframe = encodeFrame einfo $ DataFrame "\5DUMMY"
 
 -- HTTP/2 does not support ResponseStream and ResponseRaw.
