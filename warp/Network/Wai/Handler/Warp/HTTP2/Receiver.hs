@@ -10,7 +10,7 @@ import qualified Control.Exception as E
 import Control.Monad (when, unless, void)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.IntMap as M
+import qualified Data.IntMap.Strict as M
 import Network.Wai.Handler.Warp.HTTP2.Request
 import Network.Wai.Handler.Warp.HTTP2.Sender
 import Network.Wai.Handler.Warp.HTTP2.Types

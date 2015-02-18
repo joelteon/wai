@@ -8,7 +8,7 @@ import Control.Concurrent.STM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.IORef (IORef, newIORef)
-import qualified Data.IntMap as M
+import qualified Data.IntMap.Strict as M
 import Data.IntMap.Strict (IntMap)
 import qualified Network.HTTP.Types as H
 import Network.Wai (Request)
