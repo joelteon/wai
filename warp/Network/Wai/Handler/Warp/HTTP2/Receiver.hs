@@ -143,7 +143,7 @@ frameReceiver ctx@Context{..} mkreq src =
                      when (ftyp `notElem` [FrameHeaders,FramePriority]) $
                          E.throwIO $ ConnectionError ProtocolError "this frame is not allowed in an idel stream"
                      cnt <- readIORef concurrency
-                     when (cnt >= 100) $ -- fixme: hard-coding
+                     when (cnt >= defaultConcurrency) $
                          E.throwIO $ StreamError RefusedStream streamId
                      newstrm <- newStream stid
                      atomicModifyIORef' streamTable $ \m ->

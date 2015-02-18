@@ -37,8 +37,7 @@ http2 conn ii addr transport settings src app = do
         -- statically.
         -- fixme: 6 is hard-coded
         tids <- replicateM 6 $ forkIO $ worker ctx app enQResponse
-        -- fixme: 100 is hard-coded
-        let rsp = settingsFrame id [(SettingsMaxConcurrentStreams,100)]
+        let rsp = settingsFrame id [(SettingsMaxConcurrentStreams,defaultConcurrency)]
         atomically $ writeTQueue (outputQ ctx) rsp
         -- frameSender is the main thread because it ensures to send
         -- a goway frame.

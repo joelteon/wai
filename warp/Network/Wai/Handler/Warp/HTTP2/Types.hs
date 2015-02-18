@@ -100,3 +100,8 @@ newStream sid = Stream sid <$> newIORef Idle
                            <*> newIORef (return ())
                            <*> newIORef Nothing
                            <*> newIORef 0
+
+----------------------------------------------------------------
+
+defaultConcurrency :: Int
+defaultConcurrency = 100
