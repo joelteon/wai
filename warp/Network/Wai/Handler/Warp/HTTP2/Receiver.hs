@@ -97,7 +97,7 @@ frameReceiver ctx@Context{..} mkreq src =
                               E.throwIO $ StreamError ProtocolError streamId
                           writeIORef streamState HalfClosed
                           let req = mkreq vh (return "")
-                          atomically $ writeTQueue inputQ $ Input streamId req streamTimeoutAction
+                          atomically $ writeTQueue inputQ $ Input strm req
                       Nothing -> E.throwIO $ StreamError ProtocolError streamId
               HasBody hdr -> do
                   resetContinued
@@ -109,7 +109,7 @@ frameReceiver ctx@Context{..} mkreq src =
                           readQ <- newReadBody q
                           bodySource <- mkSource readQ
                           let req = mkreq vh (readSource bodySource)
-                          atomically $ writeTQueue inputQ $ Input streamId req streamTimeoutAction
+                          atomically $ writeTQueue inputQ $ Input strm req
                       Nothing -> E.throwIO $ StreamError ProtocolError streamId
               s@(Continued _ _) -> do
                   setContinued
@@ -145,7 +145,7 @@ frameReceiver ctx@Context{..} mkreq src =
                      cnt <- readIORef concurrency
                      when (cnt >= 100) $ -- fixme: hard-coding
                          E.throwIO $ StreamError RefusedStream streamId
-                     newstrm <- newStream
+                     newstrm <- newStream streamId
                      atomicModifyIORef' streamTable $ \m ->
                          (M.insert stid newstrm m, ())
                      atomicModifyIORef' concurrency $ \x -> (x+1, ())

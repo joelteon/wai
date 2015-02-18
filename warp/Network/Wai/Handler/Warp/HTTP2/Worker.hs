@@ -24,11 +24,11 @@ worker :: Context -> Application -> EnqRsp -> IO ()
 worker Context{..} app enQResponse = go `E.catch` gonext
   where
     go = forever $ do
-        Input sid req ref <- atomically $ readTQueue inputQ
-        let stid = fromStreamIdentifier sid
+        Input Stream{..} req <- atomically $ readTQueue inputQ
+        let stid = fromStreamIdentifier streamNumber
         tid <- myThreadId
-        E.bracket (writeIORef ref $ E.throwTo tid Break)
-                  (\_ -> writeIORef ref $ return ())
+        E.bracket (writeIORef streamTimeoutAction $ E.throwTo tid Break)
+                  (\_ -> writeIORef streamTimeoutAction $ return ())
                   (\_ -> void $ app req $ enQResponse stid)
     gonext Break = go `E.catch` gonext
 

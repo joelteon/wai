@@ -32,7 +32,7 @@ isHTTP2 tls = useHTTP2
 
 ----------------------------------------------------------------
 
-data Input = Input StreamIdentifier Request (IORef (IO ()))
+data Input = Input Stream Request
 
 data Context = Context {
     http2settings      :: IORef Settings
@@ -86,16 +86,17 @@ instance Show StreamState where
 data Activity = Active | Inactive
 
 data Stream = Stream {
-    streamState         :: IORef StreamState
+    streamNumber        :: StreamIdentifier
+  , streamState         :: IORef StreamState
   , streamActivity      :: IORef Activity
   , streamTimeoutAction :: IORef (IO ())
   , streamContentLength :: IORef (Maybe Int)
   , streamBodyLength    :: IORef Int
   }
 
-newStream :: IO Stream
-newStream = Stream <$> newIORef Idle
-                   <*> newIORef Active
-                   <*> newIORef (return ())
-                   <*> newIORef Nothing
-                   <*> newIORef 0
+newStream :: StreamIdentifier -> IO Stream
+newStream sid = Stream sid <$> newIORef Idle
+                           <*> newIORef Active
+                           <*> newIORef (return ())
+                           <*> newIORef Nothing
+                           <*> newIORef 0
